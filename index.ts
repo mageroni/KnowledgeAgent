@@ -145,22 +145,21 @@ Bun.serve({
         "id": "chatcmpl-123",
         "object": "chat.completion.chunk",
         "created": (new Date()).getTime(),
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-4-1106-preview",
         "system_fingerprint": "fp_44709d6fcb",
         "choices": [
           {
             "index": 0,
             "delta": {
-              "role":"assistant",
               "content": "Indexing started. This might take a while."
             },
             "logprobs": null,
-            "finish_reason":"stop"
+            "finish_reason": null
           }
         ]
       };
 
-      return new Response(JSON.stringify({data}), { status: 200 });
+      return new Response(`data: ${JSON.stringify(data)}\n\n`, { status: 200 });
     }
 
     const azureSearchService = new AzureSearchService();
