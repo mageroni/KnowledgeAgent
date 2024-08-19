@@ -3,7 +3,6 @@ import crypto from "crypto";
 import StorageAccount from './services/StorageAccount';
 import AzureSearchService from "./services/AzureSearch";
 import { getConfluenceContent } from './services/Confluence';
-import TurndownService from 'turndown';
 
 /*
 import { OpenAI } from "openai";
@@ -19,6 +18,25 @@ const Message = z.object({
 const Input = z.object({
   messages: z.array(Message),
 });
+
+type RequestMessage = {
+  copilot_thread_id: string;
+  agent: string;
+  completion: Completion;
+}
+
+type Completion = {
+	choices: Array<CompletionChoice>;
+}
+
+type CompletionChoice = {
+	delta: Message;
+}
+
+type Message = {
+	role: string;                  
+	content: string;
+}
 
 let isIndexing = false;
 
@@ -123,50 +141,39 @@ Bun.serve({
       // return new readable stream with the message "Indexing started. This might take a while."
       console.log("Indexing started. This might take a while.");
 
-      const data = [{
+      const data = {
         "id": "chatcmpl-123",
         "object": "chat.completion.chunk",
         "created": (new Date()).getTime(),
-        "model": "gpt-4-1106-preview",
+        "model": "gpt-3.5-turbo",
         "system_fingerprint": "fp_44709d6fcb",
         "choices": [
           {
             "index": 0,
             "delta": {
+              "role":"assistant",
               "content": "Indexing started. This might take a while."
             },
             "logprobs": null,
-            "finish_reason": null
-          }
-        ]
-      },{
-        "id":"chatcmpl-123",
-        "object":"chat.completion.chunk",
-        "created":(new Date()).getTime(),
-        "model":"gpt-4-1106-preview",
-        "system_fingerprint":null,
-        "choices": [
-          {
-            "index":0,
-            "delta":{},
-            "logprobs":null,
             "finish_reason":"stop"
           }
         ]
-      }];
+      };
 
-      return new Response(JSON.stringify(data), { status: 200 });
+      return new Response(JSON.stringify({data}), { status: 200 });
     }
 
-
-    //const confluenceReponse = await GetConfluenceSearch({ messages } as Messages, request);
     const azureSearchService = new AzureSearchService();
-    const confluenceData = await azureSearchService.searchContent(messages[0].content);
+    const confluenceData = await azureSearchService.searchContent(messages[messages.length-1].content);
 
     messages.splice(-1, 0, 
       {
         role: "system",
-        content: "Respond based on the following Confluence content: " + JSON.stringify(confluenceData)
+        content: "Respond based on the following Confluence content"
+      },
+      {
+        role: "system",
+        content: JSON.stringify(confluenceData),
       }
     );
 
@@ -193,49 +200,6 @@ Bun.serve({
     return new Response(capiUserResponse.body, { status: 200 } );
   },
 });
-
-async function GetConfluenceSearch(input: Messages, request: Request) {  
-
-  // Using the Azure Search Service, search for related content based on the user's input
-  const azureSearchService = new AzureSearchService();
-  const searchResults = await azureSearchService.searchContent(input.messages[0].content);
-
-  input.messages.splice(-1, 0, {
-    role: "system",
-    content: "Please respond based on this Confluence content",
-  },{
-    role: "system",
-    content: JSON.stringify(searchResults),
-  });
-
-  return CallCopilot(input, request);
-
-}
-
-
-async function PrettyResponse(message: string, request: Request) {
-  const prettyResponse = await CallCopilot({ messages: [{ role: "user", content: "Please send friendly message of this: " + message }] }, request);
-  return prettyResponse;
-}
-
-async function CallCopilot(messages: Messages, request: Request){
-  const capiResponse = await fetch(
-    "https://api.githubcopilot.com/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${request.headers.get("X-GitHub-Token")}`,
-      },
-      body: JSON.stringify({
-        stream: false,
-        messages: messages,
-        model: "gpt-3.5-turbo",
-      }),
-    }
-  )
-  return capiResponse;
-}
 
 const GITHUB_KEYS_URI = "https://api.github.com/meta/public_keys/copilot_api";
 

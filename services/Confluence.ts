@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import TurndownService from 'turndown';
 
-interface ConfluenceRecord{
+export interface ConfluenceRecord{
   id: string;
   title: string;
   spaceId: string;
@@ -15,9 +15,6 @@ interface ConfluenceRecord{
   };
   body: {
     storage: {
-      value: string;
-    };
-    atlas_doc_format: {
       value: string;
     };
   };

@@ -1,5 +1,5 @@
-import { SearchClient, SearchIndexClient, SearchIndexerClient, type SearchFieldDataType, type SearchIndex, type SearchIndexerDataSourceConnection } from "@azure/search-documents";
-
+import { SearchClient, SearchIndexClient, SearchIndexerClient, type SearchDocumentsResult, type SearchFieldDataType, type SearchIndex, type SearchIndexerDataSourceConnection } from "@azure/search-documents";
+import { type ConfluenceRecord } from './Confluence';
 const {  AzureKeyCredential } = require("@azure/search-documents");
 
 const dotenv = require("dotenv");
@@ -63,19 +63,7 @@ class AzureSearchService {
             dataSourceName: "my-datasource",
             targetIndexName: "my-index",
             schedule: { interval: "PT2H" },
-            parameter: { configuration: { parsingMode: "jsonArray" } },
-            fieldMappings: [
-                { sourceFieldName: "id", targetFieldName: "id" },
-                { sourceFieldName: "title", targetFieldName: "title" },
-                { sourceFieldName: "spaceId", targetFieldName: "spaceId" },
-                { sourceFieldName: "parentId", targetFieldName: "parentId" },
-                { sourceFieldName: "parentType", targetFieldName: "parentType" },
-                { sourceFieldName: "authorId", targetFieldName: "authorId" },
-                { sourceFieldName: "ownerId", targetFieldName: "ownerId" },
-                { sourceFieldName: "createdAt", targetFieldName: "createdAt" }/*,
-                { sourceFieldName: "/content/version/createdAt", targetFieldName: "version/createdAt" },
-                { sourceFieldName: "/content/body/storage/value", targetFieldName: "body/storage/value" }*/
-            ]
+            parameters: { configuration: { parsingMode: "jsonArray" as "jsonArray" } }
             //skillsetName: "my-skillset"  // Assuming a skillset is already created
         };
 
@@ -83,13 +71,21 @@ class AzureSearchService {
         console.log("Indexer created");
     }
 
-    async searchContent(query: string) : Promise<void> {
-        const searchResults = await this.searchClient.search(query);
+    async searchContent(query: string) : Promise<ConfluenceRecord[]> {
+        const searchOptions = {
+            top: 10
+        };
+        
+        const searchResults = await this.searchClient.search(query, searchOptions);
+        const documentsArray: ConfluenceRecord[] = [];
 
         for await (const result of searchResults.results) {
             console.log(`Found document with id: ${result.document.id}`);
             console.log(result.document);
+            documentsArray.push(result.document);
         }
+
+        return documentsArray;
     }
 
 }
