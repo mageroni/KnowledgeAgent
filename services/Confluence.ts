@@ -31,7 +31,7 @@ interface ConfluenceResponse {
 const ConfluenceAuthenticationToken = process.env.CONFLUENCE_TOKEN;
 
 export async function getConfluenceContent(incremental: boolean, timestamp: string): Promise<ConfluenceRecord[]> {
-  let url: string | null = 'https://mageroni.atlassian.net/wiki/api/v2/pages?body-format=storage&sort=modified-date';
+  let url: string | null = process.env.ATLASSIAN_DOMAIN + '/wiki/api/v2/pages?body-format=storage&sort=modified-date';
   const headers = {
     'Authorization': ConfluenceAuthenticationToken || '',
     'Content-Type': 'application/json'

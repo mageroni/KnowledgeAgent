@@ -1,13 +1,7 @@
 import { z } from "zod";
 import crypto from "crypto";
-import StorageAccount from './services/StorageAccount';
 import AzureSearchService from "./services/AzureSearch";
-import { getConfluenceContent } from './services/Confluence';
-
-/*
-import { OpenAI } from "openai";
-import type { ChatCompletionStreamParams } from "openai/lib/ChatCompletionStream.mjs";
-*/
+import IndexerClient from "./services/IndexerClient";
 
 const Message = z.object({
   role: z.string(),
@@ -19,26 +13,10 @@ const Input = z.object({
   messages: z.array(Message),
 });
 
-type RequestMessage = {
-  copilot_thread_id: string;
-  agent: string;
-  completion: Completion;
-}
-
-type Completion = {
-	choices: Array<CompletionChoice>;
-}
-
-type CompletionChoice = {
-	delta: Message;
-}
-
 type Message = {
 	role: string;                  
 	content: string;
 }
-
-let isIndexing = false;
 
 interface CapiJson {
   choices: Array<{
@@ -55,17 +33,7 @@ interface CapiJson {
   }>;
 }
 
-interface Messages {
-  messages:[
-    {
-      role: string;
-      content: string;
-      name?: string | undefined;
-    }
-  ]
-};
-
-//const openai = new OpenAI({ apiKey: Bun.env.OPENAI_API_KEY });
+const indexerClient = new IndexerClient();
 
 Bun.serve({
   port: Bun.env.PORT ?? "3000",
@@ -75,14 +43,15 @@ Bun.serve({
 
     // Do nothing with the OAuth callback, for now. Just return a 200.
     if (new URL(request.url).pathname === "/oauth/callback") {
-      console.debug("received oauth callback");
-      return Response.json({ ok: "Authentication successful! To get started, please ask the chat to begin indexing." }, { status: 200 });
+      indexerClient.startIndexing();
+      return Response.json({ ok: "Authentication successful!" }, { status: 200 });
     }
 
     const signature = request.headers.get("Github-Public-Key-Signature")!;
     const keyID = request.headers.get("Github-Public-Key-Identifier")!;
     const tokenForUser = request.headers.get("X-GitHub-Token")!;
     const payload = await request.text();
+
     try {
       // Verify the signature, so we know that the request came from GitHub
       await verifySignature(payload, signature, keyID, tokenForUser);
@@ -98,6 +67,11 @@ Bun.serve({
         authorization: `token ${tokenForUser}`,
       },
     }).then((res) => res.json())) as { login: string };
+
+    const statusMsg = await indexerClient.getIndexingStatusMessage();
+    if(statusMsg != null) {
+      return new Response(`data: ${JSON.stringify(statusMsg)}\n\n`, { status: 200 });
+    }
 
     // Parsing with Zod strips unknown Copilot-specific fields in the request
     // body, which cause OpenAI errors if they're included.
@@ -123,7 +97,7 @@ Bun.serve({
         },
         body: JSON.stringify({
           stream: false,
-          messages: messages,
+          messages: [messages[messages.length-1]],
           model: "gpt-3.5-turbo",
           functions: [{
             "name": "start_indexing",
@@ -135,12 +109,11 @@ Bun.serve({
     
     const capiJson = await capiResponse.json() as CapiJson;
     const functionToCall = capiJson.choices[0].message?.function_call?.name;
+    console.log("Function to call: " + functionToCall);
 
     if (functionToCall == "start_indexing") {
-      startIndexing(user.login);
-      // return new readable stream with the message "Indexing started. This might take a while."
+      indexerClient.startIndexing();
       console.log("Indexing started. This might take a while.");
-
       const data = {
         "id": "chatcmpl-123",
         "object": "chat.completion.chunk",
@@ -148,17 +121,16 @@ Bun.serve({
         "model": "gpt-4-1106-preview",
         "system_fingerprint": "fp_44709d6fcb",
         "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "content": "Indexing started. This might take a while."
-            },
-            "logprobs": null,
-            "finish_reason": null
-          }
+            {
+                "index": 0,
+                "delta": {
+                    "content": "Indexing started. This might take a while.",
+                },
+                "logprobs": null,
+                "finish_reason": null
+            }
         ]
       };
-
       return new Response(`data: ${JSON.stringify(data)}\n\n`, { status: 200 });
     }
 
@@ -244,44 +216,5 @@ async function verifySignature(
   const verify = crypto.createVerify("SHA256").update(payload);
   if (!verify.verify(publicKey.key, signature, "base64")) {
     throw new Error("Signature does not match payload");
-  }
-}
-
-async function startIndexing( username : string) {
-  if(isIndexing === false) {
-    isIndexing = true;
-    try {
-      const storageAccountName = process.env.STORAGE_ACCOUNT_NAME;
-      const storageAccountKey = process.env.STORAGE_ACCOUNT_KEY;
-
-      if (!storageAccountName || !storageAccountKey) {
-        throw new Error('Storage account name or key is missing in environment variables');
-      }
-
-      const storageAccount = new StorageAccount(storageAccountName, storageAccountKey);
-      
-      let confluenceData;
-      if(await storageAccount.containerExists(username)) {
-        const latestTimestamp = await storageAccount.getLatestTimestamp(username);
-        confluenceData = await getConfluenceContent(true, latestTimestamp);
-      }else{
-        await storageAccount.createContainer(username);
-        confluenceData = await getConfluenceContent(false, '');
-      }
-
-      const timestampNow = new Date().toISOString();
-      storageAccount.uploadJsonData(username, `${username}_${timestampNow}.json`, confluenceData);
-
-      // Call Azure Search Service to index the data
-      const azureSearchService = new AzureSearchService();
-      await azureSearchService.createDataSource();
-      await azureSearchService.createIndex();
-      await azureSearchService.createIndexer();
-      
-    } catch (error) {
-      console.error('Error during indexing:', error);
-    } finally {
-      isIndexing = false;
-    }
   }
 }
