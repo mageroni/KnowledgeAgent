@@ -1,0 +1,11 @@
+{
+    "postCreateCommand": "curl -fsSL https://bun.sh/install | bash && echo 'export PATH=\"$HOME/.bun/bin:$PATH\"' >> $HOME/.bashrc && source $HOME/.bashrc",
+    "customizations": {
+		"vscode": {
+			"extensions": [
+                "GitHub.copilot",
+                "GitHub.copilot-chat"
+            ]
+        }
+    }
+  }
